@@ -1,49 +1,20 @@
-#include <TimerOne.h>
-
 /***********************************************************************************
     Volca Beats Random Sequencer v1.0
-      Random 16th note sequencer with probability control, velocity range control, tempo control, glitch mode, and double time trigger.
-      Based on previous random note sequencer made for the EMX, modified for use with the Volca Beats.
-      See https://www.youtube.com/watch?v=Clm4hhMMvuI for full explanation.
+      Random glitch generator for the Korg Volca Beats. Use it as a primary sequencer for the Beats or to suplement the existing sequencer.
 
-    The original project only had 3 knobs, one switch, and one button for control, so this project has those same limitations.
-    Future versions may incorporate more control, such as stutter randomization and MIDI input for clock sync.
-
-    The project is very simple and requires few components. In order to built this project you will need:
-    - 3 potentiometers, 10k recommended
-    - 1 SPST switch
-    - 1 tactile button
-    - 1 220k ohm resister for the MIDI output circuit
-    - 1 MIDI jack, or a spliced MIDI cable like I used
-
-    Connect the 3 potentiometers as follows:
-    - left pin to GND
-    - right pin to 5v
-    - center pin to A0-A2 on Arduino
-
-    The pins are designated as follows:
-    - A0: Velocity control
-    - A1: Probability control
-    - A2: Tempo control
-
-    Connect the SPST switch as follows:
-    - left pin to GND
-    - right pin to 5v
-    - center pin to pin 3 on Arduino
-
-    When the switch is in the right position, randomized CC parameters for hihat, tom, and PCM drum sounds will be sent when they are triggered, creating a more glitchy sound.
-    You can uncomment code in the loop to also send stutter randomization when this switch is in the right position, which brings the glitchy-ness up even more.
-
-    Connect the tactile button between GND and pin 2 on the Arduino.
-    When you depress the tactile button, the sequencer will trigger 32nd notes instead of 16th notes.
-
-    See https://www.arduino.cc/en/Tutorial/Midi for information on how to hook up the midi jack.
-    I skipped the 220 ohm resistor from pin 1 on the Arduino (TX) as many tutorials do not include it.
+    Features:
+      Randomly generate 8th, 16th, or 32nd notes, with full range of density control from sparse to every note.
+      Enable/disable any of the 8 voices in the random selection
+      Ability to set the range of velocity randomization
+      Ability to randomly glitch tom, hh, pcm, and stutter parameters with varying degrees
+      Internal sync or MIDI sync
+      Ability to start/stop the Volca Beats sequencer in tandem
 
     NOTE: You may have problems uploading the sketch while pin 1 on the Arduino (TX) is in use or connected. Simply disconnect that pin in order to upload the sketch.
 
  ***********************************************************************************/
 
+#include <TimerOne.h>
 #include <MIDI.h>
 
 // MIDI notes for each voice
@@ -90,7 +61,8 @@ volatile boolean playing = false;
 volatile long debounce = 0;
 volatile long timerDelay = 0;
 volatile long clockDelay = 0;
-
+volatile long tempoPeriod = 1000;
+volatile long lastTempoPeriod = 1000;
 
 
 // Call this in order to set up MIDI
@@ -98,9 +70,9 @@ MIDI_CREATE_DEFAULT_INSTANCE();
 
 void setup(void)
 {
-  MIDI.begin(MIDI_CHANNEL_OMNI);          // Launch MIDI and listen to channel 10
-  MIDI.turnThruOff();
-  randomSeed(100);         // seed our randomizer, there might be better ways to do this
+  MIDI.begin(MIDI_CHANNEL_OMNI);          // Launch MIDI and listen on all channels
+  MIDI.turnThruOff();       // turn off midi thru, we don't want any notes passing through
+  randomSeed(100);         // seed our randomizer, TODO use floating pin on the LC
 
   // See https://www.arduino.cc/en/Tutorial/DigitalPins to learn more about Arduino's built in pull up resistors
   pinMode(PLAY, INPUT_PULLUP);
@@ -112,10 +84,12 @@ void setup(void)
   pinMode(TEMPO_LED, OUTPUT);
   debounce = millis();
 
-  // start timer
-  Timer1.initialize(1000);
+  // get initial tempo value
+  readTempo();
+  // start timer wither period of 24 times per quarter note (based on tempo)
+  Timer1.initialize(timerPeriod);
   Timer1.attachInterrupt(handleTimer);
-  timerDelay = millis();
+  Timer1.stop();
 
   // attach play/stop interrupt
   attachInterrupt(digitalPinToInterrupt(3), handleStartStop, FALLING);
@@ -136,7 +110,7 @@ void handleStartStop(void)
     debounce = millis();
     playing = !playing;
     stepCount = 0;
-    timerDelay = millis();
+    Timer1.start();
     clockDelay = millis();
   }
 }
@@ -354,4 +328,3 @@ void readStepDivision()
     stepsPerQuarter = 4;
   }
 }
-
