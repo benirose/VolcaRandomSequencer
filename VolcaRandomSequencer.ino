@@ -89,7 +89,6 @@ void setup(void)
   // start timer wither period of 24 times per quarter note (based on tempo)
   Timer1.initialize(timerPeriod);
   Timer1.attachInterrupt(handleTimer);
-  Timer1.stop();
 
   // attach play/stop interrupt
   attachInterrupt(digitalPinToInterrupt(3), handleStartStop, FALLING);
@@ -110,7 +109,7 @@ void handleStartStop(void)
     debounce = millis();
     playing = !playing;
     stepCount = 0;
-    Timer1.start();
+    Timer1.restart();
     clockDelay = millis();
   }
 }
